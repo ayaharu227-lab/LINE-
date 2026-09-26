@@ -1,0 +1,60 @@
+name: Codex Issue Implementer
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  implement:
+    if: >-
+      github.event.issue.pull_request == null &&
+      github.event.comment.user.login == 'ayaharu227-lab' &&
+      startsWith(github.event.comment.body, '/codex implement')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Configure branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "codex/issue-${{ github.event.issue.number }}-${{ github.run_id }}"
+      - name: Run Codex implementation
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ":workspace"
+          prompt: |
+            Implement issue #${{ github.event.issue.number }} in ${{ github.repository }}. Read AGENTS.md, rules/*, docs/product-spec.md and docs/implementation-status.md first. Work only on this branch. Never edit .github/workflows/. Preserve the fixed pig design and never reintroduce the old character, stick figure, or red flag. Keep Japanese out of generated artwork and composite exact text separately. For image changes, regenerate both full-set previews, run python scripts/validate_stickers.py and pytest, and summarize visual and technical checks.
+
+            Issue title: ${{ github.event.issue.title }}
+            Issue body: ${{ github.event.issue.body }}
+      - name: Protect workflows
+        run: |
+          git restore --source=HEAD --staged --worktree -- .github/workflows || true
+          git clean -fd -- .github/workflows
+      - name: Commit changes
+        id: commit
+        run: |
+          if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add -A
+          git commit -m "Implement issue #${{ github.event.issue.number }} with Codex"
+          git push -u origin HEAD
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Open pull request
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: gh pr create --base main --head "$(git branch --show-current)" --title "AI: ${ISSUE_TITLE}" --body "Closes #${ISSUE_NUMBER}\n\nCI and Claude Independent Review must be checked before merge."

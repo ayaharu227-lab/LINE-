@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  sticker-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - name: Validate LINE image package
+        run: python scripts/validate_stickers.py
+      - name: Validate manifest and product ratio
+        run: pytest -q
+      - name: Validate required project files
+        run: |
+          set -euo pipefail
+          for f in AGENTS.md CLAUDE.md rules/README.md rules/00-principles.md rules/10-product-quality.md docs/product-spec.md docs/implementation-status.md docs/sticker-manifest.csv assets/preview/preview-01-24-light.jpg assets/preview/preview-01-24-dark.jpg; do
+            test -f "$f" || { echo "Missing: $f"; exit 1; }
+          done
