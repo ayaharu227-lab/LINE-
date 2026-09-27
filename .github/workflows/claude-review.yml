@@ -20,10 +20,16 @@ jobs:
         with:
           fetch-depth: 0
       - name: Claude independent product review
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            HEAD SHA: ${{ github.event.pull_request.head.sha }}
+            The pull request branch is checked out. After inspection, post your complete assessment as exactly one top-level PR comment with `gh pr comment`, beginning with `<!-- claude-product-review:${{ github.event.pull_request.head.sha }} -->`. Do not leave the answer solely in the action transcript. Post the comment before finishing. If you cannot inspect all images, clearly state the limitation and verdict BLOCK. The workflow verifies that the comment exists and fails otherwise.
+
             You are the independent adversarial product reviewer for a Japanese LINE sticker product. Do not praise the creator. Inspect every changed file, then read CLAUDE.md, AGENTS.md, rules/README.md, rules/00-principles.md, rules/10-product-quality.md, docs/product-spec.md, docs/sticker-manifest.csv, and both full-set previews under assets/preview/. Inspect all 24 PNGs plus main.png and tab.png; do not infer visual quality from filenames alone.
 
             Evaluate sales utility, instant smartphone readability, exact Japanese, expression/phrase contradiction, character consistency, originality, dark-background visibility, duplication, LINE safety, and series potential. Specifically compare 04/18, 05/23, and 09/23; verify 11 reads as support, 12 as direction confusion, 17 as praise, 18 as clearly clueless, and 19-24 as purchase-driving jokes.
@@ -32,4 +38,36 @@ jobs:
 
             Approve only when every critical check passes and total score is at least 88/100. End with exactly one verdict: APPROVE, REQUEST_CHANGES, or BLOCK. If not approved, state which exact acceptance condition failed. Do not modify repository files.
           claude_args: |
-            --max-turns 40
+            --max-turns 60
+            --allowedTools "Read,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh api:*)"
+      - name: Publish and validate Claude review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_FILE: ${{ steps.claude.outputs.execution_file }}
+          REVIEW_REPO: ${{ github.repository }}
+          REVIEW_PR: ${{ github.event.pull_request.number }}
+          REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, subprocess, sys
+          path = pathlib.Path(os.environ["REVIEW_FILE"])
+          if not path.is_file():
+              sys.exit("Claude execution file is missing")
+          events = json.loads(path.read_text())
+          review = next((e["result"] for e in reversed(events) if e.get("type") == "result" and isinstance(e.get("result"), str) and e["result"].strip()), "")
+          if not review:
+              for e in reversed(events):
+                  if e.get("type") == "assistant":
+                      review = "\n".join(block["text"] for block in e.get("message", {}).get("content", []) if block.get("type") == "text" and isinstance(block.get("text"), str))
+                      if review.strip():
+                          break
+          if not review.strip():
+              sys.exit("Claude completed without a review text")
+          marker = "<!-- claude-product-review:" + os.environ["REVIEW_SHA"] + " -->"
+          repo, pr = os.environ["REVIEW_REPO"], os.environ["REVIEW_PR"]
+          comments = json.loads(subprocess.check_output(["gh", "api", f"repos/{repo}/issues/{pr}/comments?per_page=100"]))
+          if not any(marker in item.get("body", "") for item in comments):
+              subprocess.run(["gh", "api", f"repos/{repo}/issues/{pr}/comments", "-X", "POST", "-f", "body=" + marker + "\n\n" + review], check=True, stdout=subprocess.DEVNULL)
+          if not any(v in review for v in ("APPROVE", "REQUEST_CHANGES", "BLOCK")):
+              sys.exit("Claude review lacked an explicit verdict; PR remains blocked")
+          PY
