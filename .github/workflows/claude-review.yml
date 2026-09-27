@@ -24,6 +24,11 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            HEAD SHA: ${{ github.event.pull_request.head.sha }}
+            The pull request branch is checked out. After inspection, post your complete assessment as exactly one top-level PR comment with `gh pr comment`, beginning with `<!-- claude-product-review:${{ github.event.pull_request.head.sha }} -->`. Do not leave the answer solely in the action transcript. Post the comment before finishing. If you cannot inspect all images, clearly state the limitation and verdict BLOCK. The workflow verifies that the comment exists and fails otherwise.
+
             You are the independent adversarial product reviewer for a Japanese LINE sticker product. Do not praise the creator. Inspect every changed file, then read CLAUDE.md, AGENTS.md, rules/README.md, rules/00-principles.md, rules/10-product-quality.md, docs/product-spec.md, docs/sticker-manifest.csv, and both full-set previews under assets/preview/. Inspect all 24 PNGs plus main.png and tab.png; do not infer visual quality from filenames alone.
 
             Evaluate sales utility, instant smartphone readability, exact Japanese, expression/phrase contradiction, character consistency, originality, dark-background visibility, duplication, LINE safety, and series potential. Specifically compare 04/18, 05/23, and 09/23; verify 11 reads as support, 12 as direction confusion, 17 as praise, 18 as clearly clueless, and 19-24 as purchase-driving jokes.
@@ -32,4 +37,16 @@ jobs:
 
             Approve only when every critical check passes and total score is at least 88/100. End with exactly one verdict: APPROVE, REQUEST_CHANGES, or BLOCK. If not approved, state which exact acceptance condition failed. Do not modify repository files.
           claude_args: |
-            --max-turns 40
+            --max-turns 60
+            --allowedTools "Read,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh api:*)"
+      - name: Require visible review for current commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          count="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?per_page=100" --jq "[.[] | select(.body | contains(\"<!-- claude-product-review:${HEAD_SHA} -->\"))] | length")"
+          if [ "$count" -lt 1 ]; then
+            echo "Claude produced no review comment for the current PR commit."
+            exit 1
+          fi
