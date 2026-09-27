@@ -20,6 +20,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Claude independent product review
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -39,14 +40,34 @@ jobs:
           claude_args: |
             --max-turns 60
             --allowedTools "Read,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh api:*)"
-      - name: Require visible review for current commit
+      - name: Publish and validate Claude review
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_FILE: ${{ steps.claude.outputs.execution_file }}
+          REVIEW_REPO: ${{ github.repository }}
+          REVIEW_PR: ${{ github.event.pull_request.number }}
+          REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          count="$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments?per_page=100" --jq "[.[] | select(.body | contains(\"<!-- claude-product-review:${HEAD_SHA} -->\"))] | length")"
-          if [ "$count" -lt 1 ]; then
-            echo "Claude produced no review comment for the current PR commit."
-            exit 1
-          fi
+          python - <<'PY'
+          import json, os, pathlib, subprocess, sys
+          path = pathlib.Path(os.environ["REVIEW_FILE"])
+          if not path.is_file():
+              sys.exit("Claude execution file is missing")
+          events = json.loads(path.read_text())
+          review = next((e["result"] for e in reversed(events) if e.get("type") == "result" and isinstance(e.get("result"), str) and e["result"].strip()), "")
+          if not review:
+              for e in reversed(events):
+                  if e.get("type") == "assistant":
+                      review = "\n".join(block["text"] for block in e.get("message", {}).get("content", []) if block.get("type") == "text" and isinstance(block.get("text"), str))
+                      if review.strip():
+                          break
+          if not review.strip():
+              sys.exit("Claude completed without a review text")
+          marker = "<!-- claude-product-review:" + os.environ["REVIEW_SHA"] + " -->"
+          repo, pr = os.environ["REVIEW_REPO"], os.environ["REVIEW_PR"]
+          comments = json.loads(subprocess.check_output(["gh", "api", f"repos/{repo}/issues/{pr}/comments?per_page=100"]))
+          if not any(marker in item.get("body", "") for item in comments):
+              subprocess.run(["gh", "api", f"repos/{repo}/issues/{pr}/comments", "-X", "POST", "-f", "body=" + marker + "\n\n" + review], check=True, stdout=subprocess.DEVNULL)
+          if not any(v in review for v in ("APPROVE", "REQUEST_CHANGES", "BLOCK")):
+              sys.exit("Claude review lacked an explicit verdict; PR remains blocked")
+          PY
