@@ -29,6 +29,7 @@ def exact_text(phrase: str, size: int, top: int) -> Image.Image:
     font.set_variation_by_axes([700])
     box = draw.textbbox((0, 0), phrase, font=font, stroke_width=3)
     x = round((370 - (box[2] - box[0])) / 2 - box[0])
+    assert x >= 8 and x + box[2] <= 362, (phrase, box)
     y = top - box[1]
     draw.text((x, y), phrase, font=font, fill=(51, 32, 25, 255),
               stroke_width=3, stroke_fill=(255, 255, 255, 255))
@@ -36,25 +37,46 @@ def exact_text(phrase: str, size: int, top: int) -> Image.Image:
 
 
 def stamp(number: str, text_crop_height: int, phrase: str | None = None,
-          text_size: int = 44, text_top: int = 45) -> None:
+          text_size: int = 44, text_top: int = 40,
+          art_height: int = 213) -> None:
     canvas = Image.new('RGBA', (370, 320), (0, 0, 0, 0))
-    art_name = '21-v3.png' if number == '21' else f'{number}-v2.png'
-    artwork = fit(trimmed(ART / art_name), 344,
-                  200 if number == '08' else 213)
+    art_name = ('21-v3.png' if number == '21' else
+                '09-v3.png' if number == '09' else
+                '18-v2.png' if number == '18' else
+                f'{number}-v2.png')
+    artwork = fit(trimmed(ART / art_name), 344, art_height)
     canvas.alpha_composite(artwork, ((370 - artwork.width) // 2, 310 - artwork.height))
     if phrase:
         text = exact_text(phrase, text_size, text_top)
     else:
         original = Image.open(SOURCE / f'{number}.png').convert('RGBA')
         text = original.crop((0, 0, 370, text_crop_height))
+    text_bottom = text.getchannel('A').getbbox()[3]
+    art_top = 310 - artwork.height
+    assert art_top - text_bottom >= 8, (number, text_bottom, art_top)
     canvas.alpha_composite(text, (0, 0))
     canvas.save(STICKERS / f'{number}.png', optimize=True)
 
 
-stamp('04', 82)
-stamp('08', 94, 'ごめんね', 46, 45)
-stamp('09', 90)
-stamp('21', 82)
+stamp('04', 82, '了解！', 44, 40, 205)
+stamp('08', 94, 'ごめんね', 46, 42, 200)
+stamp('09', 90, 'だいじょうぶ？', 42, 40)
+stamp('21', 82, 'ちゃんと聞いてる', 38, 40)
+
+# These originals had the ears almost meeting the lettering. Keep the art,
+# rebuild the labels independently, and enforce a real alpha gap.
+for number, phrase, size in [('06', 'はーい', 45),
+                             ('07', 'お願いします', 35),
+                             ('15', 'よろしく！', 44)]:
+    canvas = Image.new('RGBA', (370, 320), (0, 0, 0, 0))
+    artwork = fit(trimmed(ART / 'original' / f'{number}.png'), 344, 205)
+    text = exact_text(phrase, size, 40)
+    assert 310 - artwork.height - text.getchannel('A').getbbox()[3] >= 8
+    canvas.alpha_composite(artwork, ((370 - artwork.width) // 2, 310 - artwork.height))
+    canvas.alpha_composite(text, (0, 0))
+    canvas.save(STICKERS / f'{number}.png', optimize=True)
+
+stamp('18', 0, '分かったよ', 44, 40, 205)
 
 # Recompose the existing, approved character artwork below its exact Japanese
 # lettering so ears and motion marks do not collide with the first line.
@@ -63,9 +85,11 @@ for number, phrase in [('14', 'おやすみ'), ('16', 'いいね！'),
                        ('20', '今やる！'), ('22', '余裕だよ'),
                        ('23', '大丈夫！')]:
     canvas = Image.new('RGBA', (370, 320), (0, 0, 0, 0))
-    artwork = fit(trimmed(ART / 'original' / f'{number}.png'), 344, 205)
+    artwork = fit(trimmed(ART / 'original' / f'{number}.png'), 344, 215)
     canvas.alpha_composite(artwork, ((370 - artwork.width) // 2, 310 - artwork.height))
-    canvas.alpha_composite(exact_text(phrase, 43, 44), (0, 0))
+    text = exact_text(phrase, 43, 37)
+    assert 310 - artwork.height - text.getchannel('A').getbbox()[3] >= 8, number
+    canvas.alpha_composite(text, (0, 0))
     canvas.save(STICKERS / f'{number}.png', optimize=True)
 
 main_art = trimmed(ART / 'main-v2.png')
@@ -94,4 +118,4 @@ with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
     for path in sorted(STICKERS.glob('*.png')):
         bundle.write(path, path.name)
 
-print('Rebuilt 11 stickers, main, tab, both previews, and release ZIP')
+print('Rebuilt 15 stickers, main, tab, both previews, and release ZIP')
