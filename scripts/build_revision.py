@@ -1,5 +1,5 @@
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -7,6 +7,7 @@ ASSETS = ROOT / 'assets'
 ART = ASSETS / 'artwork'
 STICKERS = ASSETS / 'stickers'
 SOURCE = ASSETS / 'source-stickers'
+FONT = ASSETS / 'fonts' / 'NotoSansJP-Subset.ttf'
 
 
 def trimmed(path: Path) -> Image.Image:
@@ -21,29 +22,50 @@ def fit(image: Image.Image, max_width: int, max_height: int) -> Image.Image:
     return image.resize((round(image.width * scale), round(image.height * scale)), Image.Resampling.LANCZOS)
 
 
-def stamp(number: str, text_crop_height: int) -> None:
+def exact_text(phrase: str, size: int, top: int) -> Image.Image:
+    layer = Image.new('RGBA', (370, 105), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    font = ImageFont.truetype(FONT, size)
+    font.set_variation_by_axes([700])
+    box = draw.textbbox((0, 0), phrase, font=font, stroke_width=3)
+    x = round((370 - (box[2] - box[0])) / 2 - box[0])
+    y = top - box[1]
+    draw.text((x, y), phrase, font=font, fill=(51, 32, 25, 255),
+              stroke_width=3, stroke_fill=(255, 255, 255, 255))
+    return layer
+
+
+def stamp(number: str, text_crop_height: int, phrase: str | None = None,
+          text_size: int = 44, text_top: int = 45) -> None:
     canvas = Image.new('RGBA', (370, 320), (0, 0, 0, 0))
-    artwork = fit(trimmed(ART / f'{number}-v2.png'), 344, 213)
+    art_name = '21-v3.png' if number == '21' else f'{number}-v2.png'
+    artwork = fit(trimmed(ART / art_name), 344,
+                  200 if number == '08' else 213)
     canvas.alpha_composite(artwork, ((370 - artwork.width) // 2, 310 - artwork.height))
-    original = Image.open(SOURCE / f'{number}.png').convert('RGBA')
-    text = original.crop((0, 0, 370, text_crop_height))
+    if phrase:
+        text = exact_text(phrase, text_size, text_top)
+    else:
+        original = Image.open(SOURCE / f'{number}.png').convert('RGBA')
+        text = original.crop((0, 0, 370, text_crop_height))
     canvas.alpha_composite(text, (0, 0))
     canvas.save(STICKERS / f'{number}.png', optimize=True)
 
 
 stamp('04', 82)
-stamp('08', 94)
+stamp('08', 94, 'ごめんね', 46, 45)
+stamp('09', 90)
 stamp('21', 82)
 
 # Recompose the existing, approved character artwork below its exact Japanese
 # lettering so ears and motion marks do not collide with the first line.
-for number, text_height in [('14', 94), ('16', 94), ('17', 94),
-                            ('19', 94), ('20', 94), ('22', 94), ('23', 94)]:
+for number, phrase in [('14', 'おやすみ'), ('16', 'いいね！'),
+                       ('17', 'えらい！'), ('19', '任せて！'),
+                       ('20', '今やる！'), ('22', '余裕だよ'),
+                       ('23', '大丈夫！')]:
     canvas = Image.new('RGBA', (370, 320), (0, 0, 0, 0))
-    artwork = fit(trimmed(ART / 'original' / f'{number}.png'), 344, 195)
+    artwork = fit(trimmed(ART / 'original' / f'{number}.png'), 344, 205)
     canvas.alpha_composite(artwork, ((370 - artwork.width) // 2, 310 - artwork.height))
-    original = Image.open(SOURCE / f'{number}.png').convert('RGBA')
-    canvas.alpha_composite(original.crop((0, 0, 370, text_height)), (0, 0))
+    canvas.alpha_composite(exact_text(phrase, 43, 44), (0, 0))
     canvas.save(STICKERS / f'{number}.png', optimize=True)
 
 main_art = trimmed(ART / 'main-v2.png')
@@ -52,12 +74,8 @@ main = Image.new('RGBA', (240, 240), (0, 0, 0, 0))
 main.alpha_composite(main_fit, ((240 - main_fit.width) // 2, (240 - main_fit.height) // 2))
 main.save(STICKERS / 'main.png', optimize=True)
 
-# The tab is a face close-up derived from the dedicated store illustration.
-face = main_art.crop((round(main_art.width * .08), 0, round(main_art.width * .92), round(main_art.height * .70)))
-face_box = face.getchannel('A').getbbox()
-assert face_box
-face = face.crop(face_box)
-face_fit = fit(face, 88, 66)
+# A dedicated head portrait avoids amputating the hand, ears or question mark.
+face_fit = fit(trimmed(ART / 'tab-v2.png'), 88, 66)
 tab = Image.new('RGBA', (96, 74), (0, 0, 0, 0))
 tab.alpha_composite(face_fit, ((96 - face_fit.width) // 2, (74 - face_fit.height) // 2))
 tab.save(STICKERS / 'tab.png', optimize=True)
@@ -76,4 +94,4 @@ with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
     for path in sorted(STICKERS.glob('*.png')):
         bundle.write(path, path.name)
 
-print('Rebuilt 10 stickers, main, tab, both previews, and release ZIP')
+print('Rebuilt 11 stickers, main, tab, both previews, and release ZIP')
