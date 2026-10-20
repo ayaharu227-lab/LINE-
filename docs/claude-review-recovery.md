@@ -29,3 +29,21 @@ Issue #4、商品PR #5、商品画像の基準commit `7dd35719f7966674788caf5b5f
 2. 残高/利用上限/鍵等の本人操作が必要な場合のみ、具体的な画面と操作を伝える。
 3. 接続可能なら独立審査の結果を確認し、88点・重大欠陥全PASSまで販売準備完了にしない。
 4. 商品PR #5 はdraftを保ち、重複課金を防ぐ。通常の定期進捗報告は再開しない。
+
+## 実測結果（2026-10-21 00:05 JST）
+
+[診断run 39445121329](https://github.com/ayaharu227-lab/LINE-/actions/runs/39445121329) にて、Actionを起動する前の公式Messages API直接接続がHTTP 400 / `invalid_request_error` / `credit_balance_rejected` を返した。request-id: `req_011CgDhGc6qKXRx5DS73NB2q`。GitHub登録済みsecretを使った1回の呼び出しで確認。Action固有の不具合だけが原因という見立ては、この実測では支持できない。残高の実額やキーの所属組織名は、この権限では読めないため断定しない。
+
+事前確認失敗により本審査は自動でスキップされ、安全な診断JSONがartifact `12275860710` へ保存された。APIキーや生の実行内容は出力していない。
+
+[CI 39445121151](https://github.com/ayaharu227-lab/LINE-/actions/runs/39445121151) 成功。`validate_stickers.py`: 24枚＋main/tab PASS、pytest: **12 passed**。これでプログラム側の診断・不要な本審査起動防止は実機確認できたが、外部API接続自体は未復旧。独立商品審査の条件は未達のまま。
+
+## 本人操作と再開条件
+
+1. [Claude ConsoleのBilling](https://platform.claude.com/settings/billing) にログインし、GitHubの `ANTHROPIC_API_KEY` を作成した組織を選ぶ。
+2. Settings > Billingで、その組織の利用可能な**購入済みクレジット**を確認する。不足時はBuy creditsで本人が追加する。残高が既にある場合は追加購入を重ねず、キーの所属組織と購入先を照合し、必要ならこのrequest-idを添えて本人からサポートへ相談する。秘密キーをチャットへ送る必要はない。
+3. 公式案内ではMax/Teamに付属する月次APIクレジットはGitHub Action起動のClaude Codeには適用されない。表示残高だけで判断せず、購入済みか付属APIクレジットかも確認する。新契約や自動チャージ設定は行わない。
+4. 本人から残高/組織の確認完了を受けた後、保守PR #7をreadyに戻して事前確認＋商品監査を1回実行する。課金状態が変わらない間は再実行しない。商品PR #5と保守PR #7はdraftのまま維持する。
+5. 同じ商品画像の審査が88点以上・重大欠陥9項目全PASSになってから保守修正を統合し、商品PRの完了状態を整理する。本人のLINEログイン・規約同意・申請・振込先入力はその後の工程。
+
+公式根拠: [API利用の支払い方法](https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage)、[Max/Team付属APIクレジットの適用範囲](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans)。
