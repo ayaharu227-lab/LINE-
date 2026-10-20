@@ -1,0 +1,21 @@
+{
+  "checked_at": "2026-10-20T15:05:05Z",
+  "repository": "ayaharu227-lab/LINE-",
+  "product_head": "7dd35719f7966674788caf5b5f2e91455b219519",
+  "maintenance_head": "17c7ccdecce202a3760fc66ad3997a38c5676f5c",
+  "run_id": 39445121329,
+  "ci_run_id": 39445121151,
+  "artifact_id": 12275860710,
+  "stage": "messages_api_preflight",
+  "http_status": 400,
+  "error_type": "invalid_request_error",
+  "category": "credit_balance_rejected",
+  "request_id": "req_011CgDhGc6qKXRx5DS73NB2q",
+  "attempts": 1,
+  "max_output_tokens": 1,
+  "paid_audit_started": false,
+  "sticker_validator": "PASS",
+  "pytest": "12 passed",
+  "sale_ready": false,
+  "resume_condition": "Existing repository API key's organization has usable purchased credits and access restored; then mark maintenance PR #7 ready once; do not rerun on an unchanged billing state."
+}
